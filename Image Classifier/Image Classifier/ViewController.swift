@@ -12,6 +12,7 @@ import Vision
 class ViewController: UIViewController
 {
 
+    @IBOutlet weak var classificationLabel: UILabel!
     var captureSession: AVCaptureSession = AVCaptureSession()
     var dataOutput: AVCaptureVideoDataOutput = AVCaptureVideoDataOutput()
     
@@ -57,12 +58,12 @@ extension ViewController: AVCaptureVideoDataOutputSampleBufferDelegate
             return
         }
 
-        guard let model_CIFAR10 = try? VNCoreMLModel(for: CIFAR10_First_CNN(configuration: .init()).model) else
+        guard let model = try? VNCoreMLModel(for: CIFAR10_First_CNN(configuration: .init()).model) else
         {
             return
         }
 
-        let request = VNCoreMLRequest(model: model_CIFAR10)
+        let request = VNCoreMLRequest(model: model)
         {
             (finishedRequest, err) in
 
@@ -79,11 +80,14 @@ extension ViewController: AVCaptureVideoDataOutputSampleBufferDelegate
             }
             
             print(firstObservation.identifier, firstObservation.confidence)
-            
+            DispatchQueue.main.async {
+                let confidencePercent = String(format: "%.2f", firstObservation.confidence * 100)
+                self.classificationLabel.text = firstObservation.identifier + ": " + confidencePercent + "%"
+            }
         }
-        request.imageCropAndScaleOption = .scaleFit
+        request.imageCropAndScaleOption = .centerCrop
 
-        try? VNImageRequestHandler(cvPixelBuffer: pixelBuffer, options: [ :]).perform([request])
+        try? VNImageRequestHandler(cvPixelBuffer: pixelBuffer, options: [:]).perform([request])
     }
 }
 
