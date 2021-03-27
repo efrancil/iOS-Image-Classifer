@@ -52,27 +52,38 @@ extension ViewController: AVCaptureVideoDataOutputSampleBufferDelegate
 {
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection)
     {
-        print("Camera was able to capture a frame:", Date())
-//        guard let pixelBuffer: CVPixelBuffer = CMSampleBufferGetImageBuffer(<#T##sbuf: CMSampleBuffer##CMSampleBuffer#>) else
-//        {
-//            return
-//        }
-//
-//        guard let model_CIFAR10 = try? VNCoreMLModel(for: CIFAR_10_First_CNN(configuration: .init()).model) else
-//        {
-//            return
-//        }
-//
-//        let request = VNCoreMLRequest(model: model_CIFAR10)
-//        {
-//            (finishedRequest, err) in
-//
-//            // check the error
-//
-//            print(finishedRequest.results)
-//        }
-//
-//        try? VNImageRequestHandler(cvPixelBuffer: pixelBuffer, options: [ :]).perform([request])
+        guard let pixelBuffer: CVPixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else
+        {
+            return
+        }
+
+        guard let model_CIFAR10 = try? VNCoreMLModel(for: CIFAR10_First_CNN(configuration: .init()).model) else
+        {
+            return
+        }
+
+        let request = VNCoreMLRequest(model: model_CIFAR10)
+        {
+            (finishedRequest, err) in
+
+            // check the error
+
+            guard let results = finishedRequest.results as? [VNClassificationObservation] else
+            {
+                return
+            }
+            
+            guard let firstObservation = results.first else
+            {
+                return
+            }
+            
+            print(firstObservation.identifier, firstObservation.confidence)
+            
+        }
+        request.imageCropAndScaleOption = .scaleFit
+
+        try? VNImageRequestHandler(cvPixelBuffer: pixelBuffer, options: [ :]).perform([request])
     }
 }
 
