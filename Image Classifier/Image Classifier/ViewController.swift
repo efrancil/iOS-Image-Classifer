@@ -9,31 +9,29 @@ import UIKit
 import AVKit
 import Vision
 
-class ViewController: UIViewController
-{
-
+class ViewController: UIViewController {
+    
     @IBOutlet weak var classificationLabel: UILabel!
     var captureSession: AVCaptureSession = AVCaptureSession()
     var dataOutput: AVCaptureVideoDataOutput = AVCaptureVideoDataOutput()
+    var model: VNCoreMLModel?
     
-    override func viewDidLoad()
-    {
+    override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view.
         
-        setUpCamera()
+        initCamera()
     }
     
-    func setUpCamera()
-    {
+    // Set up the camera for live video feed
+    func initCamera() {
+        // photo preset gives border on top and bottom
         self.captureSession.sessionPreset = .photo
-        guard let captureDevice = AVCaptureDevice.default(for: .video) else
-        {
+        guard let captureDevice = AVCaptureDevice.default(for: .video) else {
             return
         }
         
-        guard let input = try? AVCaptureDeviceInput(device: captureDevice) else
-        {
+        guard let input = try? AVCaptureDeviceInput(device: captureDevice) else {
             return
         }
         self.captureSession.addInput(input)
@@ -47,47 +45,65 @@ class ViewController: UIViewController
         self.dataOutput.setSampleBufferDelegate(self, queue: DispatchQueue(label: "videoQueue"))
         self.captureSession.addOutput(self.dataOutput)
     }
+    
+    // Set up vision with the CoreML model
+    func initVisionCoreML() -> VNCoreMLRequest {
+        do {
+            self.model = try VNCoreMLModel(for: CIFAR10_First_CNN(configuration: .init()).model)
+        }
+        catch {
+            print("Error initializing CoreMLModel " + error.localizedDescription)
+        }
+        
+        let request = VNCoreMLRequest(model: self.model!, completionHandler: { [weak self] request, error in
+            self?.processClassifications(for: request, error: error)
+        })
+        // Use to preprocess correctly
+        request.imageCropAndScaleOption = .centerCrop
+        
+        return request
+    }
+    
+    // Process the classifications and update UI
+    func processClassifications(for request: VNRequest, error: Error?) {
+        DispatchQueue.main.async {
+            // Handle error and get observations if good
+            guard let results = request.results else {
+                self.classificationLabel.text = "Unable to classify image " + error!.localizedDescription
+                return
+            }
+            
+            let classifications = results as! [VNClassificationObservation]
+            let bestClassification = classifications.first
+            
+            // Get the first observation and update the labels
+            print(bestClassification!.identifier, bestClassification!.confidence)
+            DispatchQueue.main.async {
+                let confidencePercent = String(format: "%.2f", bestClassification!.confidence * 100)
+                self.classificationLabel.text = bestClassification!.identifier + ": " + confidencePercent + "%"
+            }
+        }
+    }
 }
 
-extension ViewController: AVCaptureVideoDataOutputSampleBufferDelegate
-{
-    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection)
-    {
-        guard let pixelBuffer: CVPixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else
-        {
+extension ViewController: AVCaptureVideoDataOutputSampleBufferDelegate {
+    
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        // Get a frame
+        guard let pixelBuffer: CVPixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
             return
         }
+        
+        let request = initVisionCoreML()
+        // Pass in the frame and the request
 
-        guard let model = try? VNCoreMLModel(for: CIFAR10_First_CNN(configuration: .init()).model) else
-        {
-            return
+        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer)
+        do {
+            try handler.perform([request])
         }
-
-        let request = VNCoreMLRequest(model: model)
-        {
-            (finishedRequest, err) in
-
-            // check the error
-
-            guard let results = finishedRequest.results as? [VNClassificationObservation] else
-            {
-                return
-            }
-            
-            guard let firstObservation = results.first else
-            {
-                return
-            }
-            
-            print(firstObservation.identifier, firstObservation.confidence)
-            DispatchQueue.main.async {
-                let confidencePercent = String(format: "%.2f", firstObservation.confidence * 100)
-                self.classificationLabel.text = firstObservation.identifier + ": " + confidencePercent + "%"
-            }
+        catch {
+            print("Error in classification " + error.localizedDescription)
         }
-        request.imageCropAndScaleOption = .centerCrop
-
-        try? VNImageRequestHandler(cvPixelBuffer: pixelBuffer, options: [:]).perform([request])
     }
 }
 
